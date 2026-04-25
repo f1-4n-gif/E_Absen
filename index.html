@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Absensi Siswa Pro v2.2</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        
+        #reader {
+            width: 100%;
+            border-radius: 24px;
+            overflow: hidden;
+            border: none !important;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        #reader__scan_region { background: white; }
+
+        #reader button {
+            background: #2563eb;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 12px;
+            font-weight: 600;
+            border: none;
+            margin-top: 10px;
+        }
+
+        .scan-success-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(34, 197, 94, 0.2);
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white; padding: 0; }
+            .print-container { border: none; box-shadow: none; width: 100%; }
+        }
+
+        .tab-active {
+            background: white;
+            color: #2563eb;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-900">
+
+    <div id="flash-overlay" class="scan-success-overlay"></div>
+
+    <div class="max-w-xl mx-auto px-4 pt-8 pb-24">
+        <!-- Brand Header -->
+        <header class="mb-6 text-center no-print">
+            <div class="inline-flex items-center justify-center w-12 h-12 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200 mb-4 text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+            </div>
+            <h1 class="text-xl font-extrabold tracking-tight text-slate-800 uppercase">Presensi NISN Siswa</h1>
+            
+            <div class="flex p-1 bg-slate-200/60 rounded-2xl mt-6 no-print">
+                <button onclick="switchTab('scan')" id="btn-scan" class="flex-1 py-2.5 rounded-xl font-bold transition-all text-xs tab-active">SCANNER</button>
+                <button onclick="switchTab('siswa')" id="btn-siswa" class="flex-1 py-2.5 rounded-xl font-bold transition-all text-xs text-slate-500">DATABASE</button>
+                <button onclick="switchTab('rekap')" id="btn-rekap" class="flex-1 py-2.5 rounded-xl font-bold transition-all text-xs text-slate-500">LAPORAN</button>
+            </div>
+        </header>
+
+        <!-- TAB SCAN -->
+        <div id="tab-scan" class="tab-content space-y-4">
+            <div class="relative">
+                <div id="reader" class="border-4 border-white shadow-2xl"></div>
+                <!-- Notifikasi Berhasil -->
+                <div id="scan-result-card" class="absolute inset-x-4 bottom-4 bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-2xl border border-white hidden animate-bounce z-50">
+                    <div class="flex items-center gap-4">
+                        <div class="bg-emerald-500 text-white p-2 rounded-full">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                        <div>
+                            <p id="res-nama" class="font-extrabold text-slate-800 leading-tight">Nama Siswa</p>
+                            <p id="res-detail" class="text-[10px] text-slate-500 font-medium"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 text-center">
+                    <p class="text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-1">Absen Hari Ini</p>
+                    <p id="total-today" class="text-2xl font-black text-blue-600">0</p>
+                </div>
+                <div class="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 text-center">
+                    <p class="text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-1">Siswa Terdaftar</p>
+                    <p id="total-db-siswa" class="text-2xl font-black text-slate-800">0</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB DATA SISWA -->
+        <div id="tab-siswa" class="tab-content hidden space-y-4">
+            <div class="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
+                <h2 class="font-extrabold text-slate-800 mb-2 text-lg">Input Data Siswa</h2>
+                <p class="text-xs text-slate-500 mb-4 leading-relaxed">Masukkan data dengan format: <strong>nisn,nama</strong> (Satu siswa per baris)</p>
+                
+                <div class="space-y-3">
+                    <textarea id="csv-input" placeholder="0012345678,Andi Pratama&#10;0087654321,Budi Santoso" class="w-full h-32 p-4 bg-slate-50 border-none rounded-2xl text-sm font-mono outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    <button onclick="importSiswa()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-2xl shadow-lg shadow-blue-100 active:scale-95 transition uppercase tracking-wide">Update Database</button>
+                    <button onclick="clearSiswa()" class="w-full text-red-400 text-[10px] font-bold uppercase py-2 tracking-widest">Hapus Semua Data Siswa</button>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-50 text-slate-400 font-bold uppercase">
+                        <tr>
+                            <th class="p-4">NISN</th>
+                            <th class="p-4">Nama Lengkap</th>
+                        </tr>
+                    </thead>
+                    <tbody id="siswa-list-table" class="divide-y divide-slate-50">
+                        <!-- Siswa list -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB REKAP -->
+        <div id="tab-rekap" class="tab-content hidden space-y-4">
+            <div class="bg-white rounded-3xl shadow-sm border border-slate-100 p-4 no-print flex justify-between items-center">
+                <select id="filter-month" onchange="loadAttendance()" class="text-sm font-bold bg-transparent outline-none cursor-pointer">
+                    <option value="today">Harian (Hari Ini)</option>
+                    <option value="month">Bulan Ini</option>
+                    <option value="all">Semua Riwayat</option>
+                </select>
+                <button onclick="window.print()" class="bg-slate-900 text-white p-2 rounded-xl shadow-md">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                    </svg>
+                </button>
+            </div>
+
+            <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden print-container">
+                <div class="print-only p-8 text-center border-b border-slate-100">
+                    <h1 class="text-2xl font-black uppercase text-slate-800 tracking-tighter">Laporan Presensi Siswa</h1>
+                    <p id="print-subtitle" class="text-[10px] text-slate-500 uppercase font-bold mt-2 tracking-widest"></p>
+                </div>
+
+                <div class="overflow-x-auto p-2">
+                    <table class="w-full text-left border-separate border-spacing-y-2">
+                        <thead>
+                            <tr class="text-slate-400 uppercase text-[9px] font-black tracking-widest">
+                                <th class="px-4 py-2">Waktu Scan</th>
+                                <th class="px-4 py-2">Nama & NISN</th>
+                                <th class="px-4 py-2 text-right">Keterangan</th>
+                            </tr>
+                        </thead>
+                        <tbody id="attendance-table-body">
+                            <!-- Data -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="empty-rekap" class="py-20 text-center text-slate-300 italic text-sm hidden">Tidak ada data untuk periode ini</div>
+            </div>
+
+            <div class="no-print space-y-2">
+                <button onclick="exportCSV()" class="w-full bg-emerald-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-emerald-50 flex justify-center items-center gap-2 transition active:scale-95">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    DOWNLOAD EXCEL (.CSV)
+                </button>
+                <button onclick="clearAbsensi()" class="w-full py-2 text-red-400 text-[10px] font-bold uppercase tracking-widest">Hapus Semua Riwayat</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Database
+        let dbSiswa = JSON.parse(localStorage.getItem('db_siswa')) || {};
+        let dbAbsen = JSON.parse(localStorage.getItem('db_absen')) || [];
+        let html5QrcodeScanner;
+
+        window.onload = function() {
+            updateDashboard();
+            renderSiswaTable();
+            initScanner();
+        };
+
+        function initScanner() {
+            // Pengaturan untuk memprioritaskan kamera belakang (environment)
+            const config = { 
+                fps: 20, 
+                qrbox: (viewWidth, viewHeight) => {
+                    const size = Math.min(viewWidth, viewHeight) * 0.7;
+                    return { width: size, height: size };
+                },
+                aspectRatio: 1.0,
+                // Menggunakan preferensi kamera belakang
+                facingMode: "environment"
+            };
+            
+            html5QrcodeScanner = new Html5QrcodeScanner("reader", config, false);
+            html5QrcodeScanner.render(onScanSuccess, (err) => {});
+        }
+
+        function onScanSuccess(decodedText) {
+            const now = new Date();
+            const dateKey = now.toISOString().split('T')[0];
+            const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            const dayName = now.toLocaleDateString('id-ID', { weekday: 'long' });
+            const dateStr = now.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+
+            // Cek apakah sudah absen hari ini berdasarkan NISN
+            const alreadyIn = dbAbsen.find(i => i.nisn === decodedText && i.date === dateKey);
+
+            if (!alreadyIn) {
+                const siswa = dbSiswa[decodedText] || { nama: "Siswa Tidak Dikenal" };
+                
+                const entry = {
+                    nisn: decodedText,
+                    nama: siswa.nama,
+                    date: dateKey,
+                    dateFormatted: dateStr,
+                    day: dayName,
+                    time: timeStr,
+                    timestamp: now.getTime()
+                };
+
+                dbAbsen.push(entry);
+                saveAbsen();
+                updateDashboard();
+                triggerFlash();
+                showScanCard(entry);
+                if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+            } else {
+                const card = document.getElementById('scan-result-card');
+                document.getElementById('res-nama').innerText = "SUDAH ABSEN";
+                document.getElementById('res-detail').innerText = "NISN " + decodedText + " sudah tercatat hari ini.";
+                card.classList.remove('hidden');
+                setTimeout(() => { card.classList.add('hidden'); }, 3000);
+            }
+        }
+
+        function importSiswa() {
+            const input = document.getElementById('csv-input').value.trim();
+            if (!input) return;
+
+            const lines = input.split('\n');
+            let count = 0;
+
+            lines.forEach(line => {
+                const parts = line.split(',');
+                if (parts.length >= 2) {
+                    const nisn = parts[0].trim();
+                    const nama = parts[1].trim();
+                    dbSiswa[nisn] = { nama };
+                    count++;
+                }
+            });
+
+            localStorage.setItem('db_siswa', JSON.stringify(dbSiswa));
+            renderSiswaTable();
+            updateDashboard();
+            alert(`Berhasil menyimpan ${count} data siswa.`);
+            document.getElementById('csv-input').value = '';
+        }
+
+        function renderSiswaTable() {
+            const table = document.getElementById('siswa-list-table');
+            const nisns = Object.keys(dbSiswa);
+            table.innerHTML = nisns.map(nisn => `
+                <tr>
+                    <td class="p-4 font-mono font-bold text-blue-600">${nisn}</td>
+                    <td class="p-4 font-semibold">${dbSiswa[nisn].nama}</td>
+                </tr>
+            `).join('');
+            if (nisns.length === 0) table.innerHTML = '<tr><td colspan="2" class="p-8 text-center text-slate-300">Database Belum Terisi</td></tr>';
+        }
+
+        function clearSiswa() {
+            if (confirm('Hapus seluruh data siswa di database?')) {
+                dbSiswa = {};
+                localStorage.removeItem('db_siswa');
+                renderSiswaTable();
+                updateDashboard();
+            }
+        }
+
+        function showScanCard(data) {
+            const card = document.getElementById('scan-result-card');
+            document.getElementById('res-nama').innerText = data.nama;
+            document.getElementById('res-detail').innerText = `${data.nisn} | ${data.day}, ${data.time}`;
+            
+            card.classList.remove('hidden');
+            setTimeout(() => { card.classList.add('hidden'); }, 4000);
+        }
+
+        function triggerFlash() {
+            const flash = document.getElementById('flash-overlay');
+            flash.style.opacity = '1';
+            setTimeout(() => { flash.style.opacity = '0'; }, 300);
+        }
+
+        function updateDashboard() {
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('total-today').innerText = dbAbsen.filter(i => i.date === today).length;
+            document.getElementById('total-db-siswa').innerText = Object.keys(dbSiswa).length;
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`tab-${tab}`).classList.remove('hidden');
+            
+            document.querySelectorAll('header button').forEach(b => b.classList.remove('tab-active', 'text-blue-600'));
+            document.getElementById(`btn-${tab}`).classList.add('tab-active');
+            if (tab === 'rekap') loadAttendance();
+        }
+
+        function loadAttendance() {
+            const filter = document.getElementById('filter-month').value;
+            const table = document.getElementById('attendance-table-body');
+            const empty = document.getElementById('empty-rekap');
+            const now = new Date();
+            const today = now.toISOString().split('T')[0];
+            
+            let data = [...dbAbsen];
+            if (filter === 'today') data = data.filter(i => i.date === today);
+            else if (filter === 'month') data = data.filter(i => i.date.startsWith(today.substring(0, 7)));
+
+            data.sort((a,b) => b.timestamp - a.timestamp);
+            
+            document.getElementById('print-subtitle').innerText = "LOG KEHADIRAN: " + (filter === 'today' ? "HARI INI" : (filter === 'month' ? "BULAN INI" : "SEMUA DATA"));
+            
+            if (data.length === 0) {
+                table.innerHTML = "";
+                empty.classList.remove('hidden');
+            } else {
+                empty.classList.add('hidden');
+                table.innerHTML = data.map(i => `
+                    <tr class="bg-white shadow-sm rounded-xl">
+                        <td class="px-4 py-3">
+                            <span class="block text-[8px] font-bold text-slate-300 uppercase">${i.date}</span>
+                            <span class="text-xs font-bold text-slate-800">${i.time}</span>
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="block text-sm font-extrabold text-blue-600 tracking-tight">${i.nama}</span>
+                            <span class="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">NISN: ${i.nisn}</span>
+                        </td>
+                        <td class="px-4 py-3 text-right">
+                            <span class="bg-emerald-100 text-emerald-700 text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-tighter">Hadir</span>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        function saveAbsen() { localStorage.setItem('db_absen', JSON.stringify(dbAbsen)); }
+        
+        function clearAbsensi() {
+            if (confirm('Hapus seluruh riwayat absen?')) {
+                dbAbsen = [];
+                saveAbsen();
+                loadAttendance();
+                updateDashboard();
+            }
+        }
+
+        function exportCSV() {
+            if (dbAbsen.length === 0) return;
+            const head = "NISN,Nama,Hari,Tanggal,Jam,Status\n";
+            const body = dbAbsen.map(i => `${i.nisn},${i.nama},${i.day},${i.dateFormatted},${i.time},Hadir`).join('\n');
+            const link = document.createElement("a");
+            link.href = "data:text/csv;charset=utf-8," + encodeURIComponent(head + body);
+            link.download = `Presensi_Siswa_${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+        }
+    </script>
+</body>
+</html>
